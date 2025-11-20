@@ -5,6 +5,15 @@ import * as BUI from "@thatopen/ui";
 import * as TEMPLATES from "./ui-templates";
 import { appIcons, CONTENT_GRID_ID } from "./globals";
 import { viewportSettingsTemplate } from "./ui-templates/buttons/viewport-settings";
+import {
+  loadModelsFromUrls,
+  getModelsFromUrlParams,
+} from "./model-loader";
+import {
+  initialModels,
+  autoLoadInitialModels,
+  urlParamsOverrideConfig,
+} from "./config";
 
 BUI.Manager.init();
 
@@ -108,6 +117,45 @@ await ifcLoader.setup({
   autoSetWasm: false,
   wasm: { absolute: true, path: "https://unpkg.com/web-ifc@0.0.71/" },
 });
+
+// Cargar modelos automáticamente
+const loadInitialModels = async () => {
+  const urlModels = getModelsFromUrlParams();
+  let modelsToLoad: Array<{ url: string; type: "ifc" | "frag"; name?: string }> = [];
+
+  if (urlParamsOverrideConfig && urlModels.length > 0) {
+    // Si hay parámetros URL y tienen prioridad, solo cargar esos
+    modelsToLoad = urlModels;
+  } else if (urlModels.length > 0) {
+    // Si hay parámetros URL y no tienen prioridad, combinar con configuración
+    modelsToLoad = [...initialModels, ...urlModels];
+  } else if (autoLoadInitialModels && initialModels.length > 0) {
+    // Si no hay parámetros URL pero hay configuración inicial, cargar esa
+    modelsToLoad = initialModels;
+  }
+
+  if (modelsToLoad.length > 0) {
+    try {
+      await loadModelsFromUrls(ifcLoader, fragments, modelsToLoad);
+      
+      // Ajustar cámara para mostrar todos los modelos cargados
+      if (fragments.list.size > 0) {
+        const boundingBox = new THREE.Box3();
+        for (const [_, model] of fragments.list) {
+          boundingBox.union(model.boundingBox);
+        }
+        const sphere = new THREE.Sphere();
+        boundingBox.getBoundingSphere(sphere);
+        world.camera.controls.fitToSphere(sphere, true);
+      }
+    } catch (error) {
+      console.error("Error al cargar modelos iniciales:", error);
+    }
+  }
+};
+
+// Cargar modelos después de que todo esté configurado
+loadInitialModels();
 
 const highlighter = components.get(OBF.Highlighter);
 highlighter.setup({
